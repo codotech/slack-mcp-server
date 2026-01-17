@@ -169,6 +169,23 @@ func NewMCPServer(provider *provider.ApiProvider, logger *zap.Logger) *MCPServer
 		),
 	), channelsHandler.ChannelsHandler)
 
+	s.AddTool(mcp.NewTool("channels_create",
+		mcp.WithDescription("Create a new public or private channel, optionally inviting users."),
+		mcp.WithTitleAnnotation("Create Channel"),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithString("name",
+			mcp.Required(),
+			mcp.Description("Name of the channel (without # prefix). Must be lowercase, no spaces, max 80 characters."),
+		),
+		mcp.WithBoolean("is_private",
+			mcp.Description("Create a private channel. Default is false (public channel)."),
+			mcp.DefaultBool(false),
+		),
+		mcp.WithString("user_ids",
+			mcp.Description("Comma-separated user IDs to invite to the channel after creation (e.g., 'U1234567890,U0987654321'). Works for both regular users and bot users."),
+		),
+	), channelsHandler.ChannelsCreateHandler)
+
 	logger.Info("Authenticating with Slack API...",
 		zap.String("context", "console"),
 	)

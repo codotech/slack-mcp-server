@@ -87,6 +87,10 @@ type SlackAPI interface {
 
 	// Edge API methods
 	ClientUserBoot(ctx context.Context) (*edge.ClientUserBootResponse, error)
+
+	// Channel management methods
+	CreateConversationContext(ctx context.Context, params slack.CreateConversationParams) (*slack.Channel, error)
+	InviteUsersToConversationContext(ctx context.Context, channelID string, users ...string) (*slack.Channel, error)
 }
 
 type MCPSlackClient struct {
@@ -286,6 +290,14 @@ func (c *MCPSlackClient) PostMessageContext(ctx context.Context, channelID strin
 
 func (c *MCPSlackClient) ClientUserBoot(ctx context.Context) (*edge.ClientUserBootResponse, error) {
 	return c.edgeClient.ClientUserBoot(ctx)
+}
+
+func (c *MCPSlackClient) CreateConversationContext(ctx context.Context, params slack.CreateConversationParams) (*slack.Channel, error) {
+	return c.slackClient.CreateConversationContext(ctx, params)
+}
+
+func (c *MCPSlackClient) InviteUsersToConversationContext(ctx context.Context, channelID string, users ...string) (*slack.Channel, error) {
+	return c.slackClient.InviteUsersToConversationContext(ctx, channelID, users...)
 }
 
 func (c *MCPSlackClient) IsEnterprise() bool {
