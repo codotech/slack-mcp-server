@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/korotovsky/slack-mcp-server/pkg/server/auth"
 	"github.com/korotovsky/slack-mcp-server/pkg/text"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/slack-go/slack"
 	"go.uber.org/zap"
 )
 
@@ -22,6 +25,13 @@ type Channel struct {
 	Purpose     string `json:"purpose"`
 	MemberCount int    `json:"memberCount"`
 	Cursor      string `json:"cursor"`
+}
+
+type CreatedChannel struct {
+	ID           string `csv:"id"`
+	Name         string `csv:"name"`
+	IsPrivate    bool   `csv:"isPrivate"`
+	InvitedUsers string `csv:"invitedUsers"`
 }
 
 type ChannelsHandler struct {
@@ -310,4 +320,116 @@ func paginateChannels(channels []provider.Channel, cursor string, limit int) ([]
 	)
 
 	return paged, nextCursor
+}
+
+func (ch *ChannelsHandler) ChannelsCreateHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ch.logger.Debug("ChannelsCreateHandler called", zap.Any("params", request.Params))
+
+	if ready, err := ch.apiProvider.IsReady(); !ready {
+		ch.logger.Error("API provider not ready", zap.Error(err))
+		return nil, err
+	}
+
+	// Parse and validate parameters
+	name, isPrivate, userIDs, err := ch.parseCreateChannelParams(request)
+	if err != nil {
+		ch.logger.Error("Failed to parse create-channel params", zap.Error(err))
+		return nil, err
+	}
+
+	// Create the channel
+	createParams := slack.CreateConversationParams{
+		ChannelName: name,
+		IsPrivate:   isPrivate,
+	}
+
+	channel, err := ch.apiProvider.Slack().CreateConversationContext(ctx, createParams)
+	if err != nil {
+		ch.logger.Error("Failed to create channel",
+			zap.String("name", name),
+			zap.Bool("isPrivate", isPrivate),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to create channel %q: %w", name, err)
+	}
+
+	ch.logger.Info("Channel created successfully",
+		zap.String("channelID", channel.ID),
+		zap.String("name", channel.Name),
+		zap.Bool("isPrivate", isPrivate))
+
+	// Invite users if provided
+	var invitedUsers []string
+	if len(userIDs) > 0 {
+		_, err = ch.apiProvider.Slack().InviteUsersToConversationContext(ctx, channel.ID, userIDs...)
+		if err != nil {
+			ch.logger.Warn("Failed to invite some users to channel",
+				zap.String("channelID", channel.ID),
+				zap.Strings("userIDs", userIDs),
+				zap.Error(err))
+			// Non-fatal: continue and report partial success
+		} else {
+			invitedUsers = userIDs
+			ch.logger.Info("Users invited to channel",
+				zap.String("channelID", channel.ID),
+				zap.Strings("userIDs", invitedUsers))
+		}
+	}
+
+	// Build and return CSV response
+	result := []CreatedChannel{{
+		ID:           channel.ID,
+		Name:         "#" + channel.Name,
+		IsPrivate:    isPrivate,
+		InvitedUsers: strings.Join(invitedUsers, ","),
+	}}
+
+	csvBytes, err := gocsv.MarshalBytes(&result)
+	if err != nil {
+		ch.logger.Error("Failed to marshal created channel to CSV", zap.Error(err))
+		return nil, err
+	}
+
+	return mcp.NewToolResultText(string(csvBytes)), nil
+}
+
+func (ch *ChannelsHandler) parseCreateChannelParams(request mcp.CallToolRequest) (string, bool, []string, error) {
+	// Get required channel name
+	name := request.GetString("name", "")
+	if name == "" {
+		return "", false, nil, errors.New("name is required")
+	}
+
+	// Normalize and validate channel name
+	name = strings.ToLower(strings.TrimSpace(name))
+	name = strings.TrimPrefix(name, "#")
+
+	if len(name) > 80 {
+		return "", false, nil, errors.New("channel name must be 80 characters or less")
+	}
+	if strings.Contains(name, " ") {
+		return "", false, nil, errors.New("channel name cannot contain spaces")
+	}
+
+	// Validate channel name characters (Slack requirements)
+	validNameRegex := regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+	if !validNameRegex.MatchString(name) {
+		return "", false, nil, errors.New("channel name must start with a letter or number and contain only lowercase letters, numbers, hyphens, and underscores")
+	}
+
+	// Get optional is_private flag
+	isPrivate := request.GetBool("is_private", false)
+
+	// Get optional user IDs
+	var userIDs []string
+	userIDsStr := request.GetString("user_ids", "")
+	if userIDsStr != "" {
+		for _, id := range strings.Split(userIDsStr, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				userIDs = append(userIDs, id)
+			}
+		}
+	}
+
+	return name, isPrivate, userIDs, nil
 }
