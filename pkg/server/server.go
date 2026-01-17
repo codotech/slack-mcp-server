@@ -186,6 +186,20 @@ func NewMCPServer(provider *provider.ApiProvider, logger *zap.Logger) *MCPServer
 		),
 	), channelsHandler.ChannelsCreateHandler)
 
+	s.AddTool(mcp.NewTool("channels_invite",
+		mcp.WithDescription("Invite users to an existing public or private channel."),
+		mcp.WithTitleAnnotation("Invite Users to Channel"),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithString("channel_id",
+			mcp.Required(),
+			mcp.Description("Channel ID to invite users to (e.g., 'C1234567890')."),
+		),
+		mcp.WithString("user_ids",
+			mcp.Required(),
+			mcp.Description("Comma-separated user IDs to invite (e.g., 'U1234567890,U0987654321')."),
+		),
+	), channelsHandler.ChannelsInviteHandler)
+
 	logger.Info("Authenticating with Slack API...",
 		zap.String("context", "console"),
 	)

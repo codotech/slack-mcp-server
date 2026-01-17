@@ -34,6 +34,12 @@ type CreatedChannel struct {
 	InvitedUsers string `csv:"invitedUsers"`
 }
 
+type InvitedToChannel struct {
+	ChannelID    string `csv:"channelId"`
+	ChannelName  string `csv:"channelName"`
+	InvitedUsers string `csv:"invitedUsers"`
+}
+
 type ChannelsHandler struct {
 	apiProvider *provider.ApiProvider
 	validTypes  map[string]bool
@@ -432,4 +438,79 @@ func (ch *ChannelsHandler) parseCreateChannelParams(request mcp.CallToolRequest)
 	}
 
 	return name, isPrivate, userIDs, nil
+}
+
+func (ch *ChannelsHandler) ChannelsInviteHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ch.logger.Debug("ChannelsInviteHandler called", zap.Any("params", request.Params))
+
+	if ready, err := ch.apiProvider.IsReady(); !ready {
+		ch.logger.Error("API provider not ready", zap.Error(err))
+		return nil, err
+	}
+
+	// Parse and validate parameters
+	channelID, userIDs, err := ch.parseInviteParams(request)
+	if err != nil {
+		ch.logger.Error("Failed to parse invite params", zap.Error(err))
+		return nil, err
+	}
+
+	// Invite users to the channel
+	channel, err := ch.apiProvider.Slack().InviteUsersToConversationContext(ctx, channelID, userIDs...)
+	if err != nil {
+		ch.logger.Error("Failed to invite users to channel",
+			zap.String("channelID", channelID),
+			zap.Strings("userIDs", userIDs),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to invite users to channel %q: %w", channelID, err)
+	}
+
+	ch.logger.Info("Users invited to channel successfully",
+		zap.String("channelID", channel.ID),
+		zap.String("channelName", channel.Name),
+		zap.Strings("userIDs", userIDs))
+
+	// Build and return CSV response
+	result := []InvitedToChannel{{
+		ChannelID:    channel.ID,
+		ChannelName:  "#" + channel.Name,
+		InvitedUsers: strings.Join(userIDs, ","),
+	}}
+
+	csvBytes, err := gocsv.MarshalBytes(&result)
+	if err != nil {
+		ch.logger.Error("Failed to marshal invite result to CSV", zap.Error(err))
+		return nil, err
+	}
+
+	return mcp.NewToolResultText(string(csvBytes)), nil
+}
+
+func (ch *ChannelsHandler) parseInviteParams(request mcp.CallToolRequest) (string, []string, error) {
+	// Get required channel ID
+	channelID := request.GetString("channel_id", "")
+	if channelID == "" {
+		return "", nil, errors.New("channel_id is required")
+	}
+	channelID = strings.TrimSpace(channelID)
+
+	// Get required user IDs
+	userIDsStr := request.GetString("user_ids", "")
+	if userIDsStr == "" {
+		return "", nil, errors.New("user_ids is required")
+	}
+
+	var userIDs []string
+	for _, id := range strings.Split(userIDsStr, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			userIDs = append(userIDs, id)
+		}
+	}
+
+	if len(userIDs) == 0 {
+		return "", nil, errors.New("at least one valid user_id is required")
+	}
+
+	return channelID, userIDs, nil
 }
