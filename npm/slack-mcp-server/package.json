@@ -1,6 +1,6 @@
 {
   "name": "@codo-tech/slack-mcp-server",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Model Context Protocol (MCP) server for Slack Workspaces. This integration supports both Stdio and SSE transports, proxy settings and does not require any permissions or bots being created or approved by Workspace admins",
   "main": "bin/index.js",
   "bin": {
@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/korotovsky/slack-mcp-server.git"
+    "url": "git+https://github.com/codotech/slack-mcp-server.git"
   },
   "keywords": [
     "mcp",
@@ -33,7 +33,7 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/korotovsky/slack-mcp-server/issues"
+    "url": "https://github.com/codotech/slack-mcp-server/issues"
   },
-  "homepage": "https://github.com/korotovsky/slack-mcp-server#readme"
+  "homepage": "https://github.com/codotech/slack-mcp-server#readme"
 }
